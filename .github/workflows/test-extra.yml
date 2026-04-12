@@ -519,15 +519,16 @@ jobs:
       - name: Dependencies
         # bigger-runner is a bare self-hosted runner — install the tools
         # we need for docker-build + protogen-go + go test (make, curl,
-        # unzip for the protoc download, build-essential for cgo), plus
-        # libnuma1 which the vllm CPU wheel's _C extension dlopens at
-        # runtime (libnuma.so.1 missing → init_cpu_threads_env op is not
-        # registered → AttributeError on LoadModel).
+        # unzip for the protoc download, build-essential for cgo).
+        # Runtime shared libraries the vllm backend needs (libnuma,
+        # libgomp) are packaged into the backend image via package.sh
+        # and NOT installed on the host — that way the CI exercises the
+        # packaging path end-to-end and catches missing libs that users
+        # would otherwise hit on a bare production host.
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-              make build-essential curl unzip ca-certificates git tar \
-              libnuma1 libgomp1
+              make build-essential curl unzip ca-certificates git tar
       - name: Setup Go
         uses: actions/setup-go@v5
         with:
