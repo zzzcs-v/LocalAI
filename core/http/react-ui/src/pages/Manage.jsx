@@ -4,6 +4,7 @@ import ResourceMonitor from '../components/ResourceMonitor'
 import ConfirmDialog from '../components/ConfirmDialog'
 import Toggle from '../components/Toggle'
 import NodeDistributionChip from '../components/NodeDistributionChip'
+import FilterBar from '../components/FilterBar'
 import { useModels } from '../hooks/useModels'
 import { backendControlApi, modelsApi, backendsApi, systemApi, nodesApi } from '../utils/api'
 
@@ -45,6 +46,24 @@ export default function Manage() {
   const [distributedMode, setDistributedMode] = useState(false)
   const [togglingModels, setTogglingModels] = useState(new Set())
   const [pinningModels, setPinningModels] = useState(new Set())
+  // Filter state per tab. Persisted in the URL query so switching tabs
+  // doesn't lose the filter the operator just set.
+  const [modelsSearch, setModelsSearch] = useState(() => searchParams.get('mq') || '')
+  const [modelsFilter, setModelsFilter] = useState(() => searchParams.get('mf') || 'all')
+  const [backendsSearch, setBackendsSearch] = useState(() => searchParams.get('bq') || '')
+  const [backendsFilter, setBackendsFilter] = useState(() => searchParams.get('bf') || 'all')
+
+  // Sync filter state into the URL so deep-links + tab switches survive.
+  useEffect(() => {
+    const p = new URLSearchParams(searchParams)
+    const setOrDelete = (k, v) => { if (v && v !== 'all') p.set(k, v); else p.delete(k) }
+    setOrDelete('mq', modelsSearch)
+    setOrDelete('mf', modelsFilter)
+    setOrDelete('bq', backendsSearch)
+    setOrDelete('bf', backendsFilter)
+    setSearchParams(p, { replace: true })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [modelsSearch, modelsFilter, backendsSearch, backendsFilter])
 
   const handleTabChange = (tab) => {
     setActiveTab(tab)
@@ -319,19 +338,51 @@ export default function Manage() {
       </div>
 
       {/* Models Tab */}
-      {activeTab === 'models' && (
+      {activeTab === 'models' && (() => {
+        // Computed filters — done here so the result is available both to
+        // the FilterBar counts and to the table body.
+        const MODEL_FILTERS = [
+          { key: 'all',      label: 'All',      icon: 'fa-layer-group' },
+          { key: 'running',  label: 'Running',  icon: 'fa-circle-play' },
+          { key: 'idle',     label: 'Idle',     icon: 'fa-pause' },
+          { key: 'disabled', label: 'Disabled', icon: 'fa-ban' },
+          { key: 'pinned',   label: 'Pinned',   icon: 'fa-thumbtack' },
+          ...(distributedMode ? [{ key: 'distributed', label: 'Distributed', icon: 'fa-server' }] : []),
+        ]
+        const passesFilter = (m) => {
+          if (modelsFilter === 'running') return !m.disabled && (loadedModelIds.has(m.id) || (m.loaded_on && m.loaded_on.length > 0))
+          if (modelsFilter === 'idle')    return !m.disabled && !loadedModelIds.has(m.id) && !(m.loaded_on && m.loaded_on.length > 0)
+          if (modelsFilter === 'disabled') return !!m.disabled
+          if (modelsFilter === 'pinned')   return !!m.pinned
+          if (modelsFilter === 'distributed') return Array.isArray(m.loaded_on) && m.loaded_on.length > 0
+          return true
+        }
+        const q = modelsSearch.trim().toLowerCase()
+        const passesSearch = (m) => !q || (m.id || '').toLowerCase().includes(q) || (m.backend || '').toLowerCase().includes(q)
+        const visibleModels = models.filter(m => passesFilter(m) && passesSearch(m))
+        return (
       <div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: 'var(--spacing-sm)', marginBottom: 'var(--spacing-md)' }}>
-          {distributedMode && (
-            <span className="cell-muted" title="Auto-refreshes every 10s in distributed mode so ghost models clear promptly">
-              <i className="fas fa-rotate" /> Last synced {lastSyncedAgo}
-            </span>
+        <FilterBar
+          search={modelsSearch}
+          onSearchChange={setModelsSearch}
+          searchPlaceholder="Search models by name or backend..."
+          filters={MODEL_FILTERS}
+          activeFilter={modelsFilter}
+          onFilterChange={setModelsFilter}
+          rightSlot={(
+            <>
+              {distributedMode && (
+                <span className="cell-muted" title="Auto-refreshes every 10s in distributed mode so ghost models clear promptly">
+                  <i className="fas fa-rotate" /> Last synced {lastSyncedAgo}
+                </span>
+              )}
+              <button className="btn btn-secondary btn-sm" onClick={handleReload} disabled={reloading}>
+                <i className={`fas ${reloading ? 'fa-spinner fa-spin' : 'fa-rotate'}`} />
+                {reloading ? ' Updating...' : ' Update'}
+              </button>
+            </>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={handleReload} disabled={reloading}>
-            <i className={`fas ${reloading ? 'fa-spinner fa-spin' : 'fa-rotate'}`} />
-            {reloading ? 'Updating...' : 'Update'}
-          </button>
-        </div>
+        />
 
         {modelsLoading ? (
           <div className="card" style={{ padding: 'var(--spacing-xl)', textAlign: 'center', color: 'var(--color-text-muted)' }}>
@@ -356,6 +407,12 @@ export default function Manage() {
               </a>
             </div>
           </div>
+        ) : visibleModels.length === 0 ? (
+          <div className="empty-state">
+            <i className="fas fa-filter" />
+            <p>No models match the current filter.</p>
+            <button className="btn btn-ghost btn-sm" onClick={() => { setModelsSearch(''); setModelsFilter('all') }}>Clear filters</button>
+          </div>
         ) : (
           <div className="table-container">
             <table className="table">
@@ -370,7 +427,7 @@ export default function Manage() {
                 </tr>
               </thead>
               <tbody>
-                {models.map(model => (
+                {visibleModels.map(model => (
                   <tr key={model.id} style={{ opacity: model.disabled ? 0.55 : 1, transition: 'opacity 0.2s' }}>
                     {/* Enable/Disable toggle */}
                     <td>
@@ -488,7 +545,8 @@ export default function Manage() {
           </div>
         )}
       </div>
-      )}
+        )
+      })()}
 
       {/* Backends Tab */}
       {activeTab === 'backends' && (
@@ -503,14 +561,6 @@ export default function Manage() {
               </span>
             </div>
             <div className="upgrade-banner__actions">
-              <button
-                className="btn btn-ghost btn-sm"
-                onClick={() => setShowOnlyUpgradable(v => !v)}
-                title={showOnlyUpgradable ? 'Show all backends' : 'Show only backends with updates'}
-              >
-                <i className={`fas ${showOnlyUpgradable ? 'fa-filter-circle-xmark' : 'fa-filter'}`} />
-                {showOnlyUpgradable ? ' Show all' : ' Updates only'}
-              </button>
               <button
                 className="btn btn-primary btn-sm"
                 onClick={handleUpgradeAll}
@@ -544,20 +594,87 @@ export default function Manage() {
             </div>
           </div>
         ) : (() => {
-          const visibleBackends = showOnlyUpgradable
-            ? backends.filter(b => upgrades[b.Name])
-            : backends
+          // Count chip badges: show N in the filter buttons so operators can
+          // see at a glance how their chips bucket the list.
+          const upgradableCount = backends.filter(b => upgrades[b.Name]).length
+          const userCount       = backends.filter(b => !b.IsSystem).length
+          const systemCount     = backends.filter(b => b.IsSystem).length
+          const metaCount       = backends.filter(b => b.IsMeta).length
+          const offlineCount    = backends.filter(b => {
+            const n = b.Nodes || b.nodes || []
+            return n.some(x => {
+              const s = x.node_status || x.NodeStatus
+              return s && s !== 'healthy' && s !== 'draining'
+            })
+          }).length
+
+          const BACKEND_FILTERS = [
+            { key: 'all',        label: 'All',        icon: 'fa-layer-group', count: backends.length },
+            { key: 'user',       label: 'User',       icon: 'fa-download',    count: userCount },
+            { key: 'system',     label: 'System',     icon: 'fa-shield-alt',  count: systemCount },
+            { key: 'meta',       label: 'Meta',       icon: 'fa-layer-group', count: metaCount },
+            ...(upgradableCount > 0 ? [{ key: 'upgradable', label: 'Updates', icon: 'fa-arrow-up', count: upgradableCount }] : []),
+            ...(distributedMode && offlineCount > 0 ? [{ key: 'offline', label: 'Offline nodes', icon: 'fa-exclamation-circle', count: offlineCount }] : []),
+          ]
+          const q = backendsSearch.trim().toLowerCase()
+          const passesSearch = (b) => !q
+            || (b.Name || '').toLowerCase().includes(q)
+            || (b.Metadata?.alias || '').toLowerCase().includes(q)
+            || (b.Metadata?.meta_backend_for || '').toLowerCase().includes(q)
+          const passesFilter = (b) => {
+            switch (backendsFilter) {
+              case 'user':       return !b.IsSystem
+              case 'system':     return !!b.IsSystem
+              case 'meta':       return !!b.IsMeta
+              case 'upgradable': return !!upgrades[b.Name]
+              case 'offline': {
+                const n = b.Nodes || b.nodes || []
+                return n.some(x => {
+                  const s = x.node_status || x.NodeStatus
+                  return s && s !== 'healthy' && s !== 'draining'
+                })
+              }
+              default: return true
+            }
+          }
+          // Legacy "showOnlyUpgradable" toggle is now the 'upgradable' chip —
+          // keep backward-compat by mapping it onto the new filter.
+          if (showOnlyUpgradable && backendsFilter !== 'upgradable') {
+            // One-shot reconciliation — the old state becomes the new chip.
+            setBackendsFilter('upgradable')
+            setShowOnlyUpgradable(false)
+          }
+          const visibleBackends = backends.filter(b => passesFilter(b) && passesSearch(b))
           if (visibleBackends.length === 0) {
             return (
-              <div className="empty-state">
-                <i className="fas fa-filter" />
-                <p>No backends match the current filter.</p>
-                <button className="btn btn-ghost btn-sm" onClick={() => setShowOnlyUpgradable(false)}>Clear filter</button>
-              </div>
+              <>
+                <FilterBar
+                  search={backendsSearch}
+                  onSearchChange={setBackendsSearch}
+                  searchPlaceholder="Search backends by name or alias..."
+                  filters={BACKEND_FILTERS}
+                  activeFilter={backendsFilter}
+                  onFilterChange={setBackendsFilter}
+                />
+                <div className="empty-state">
+                  <i className="fas fa-filter" />
+                  <p>No backends match the current filter.</p>
+                  <button className="btn btn-ghost btn-sm" onClick={() => { setBackendsSearch(''); setBackendsFilter('all') }}>Clear filters</button>
+                </div>
+              </>
             )
           }
           return (
-          <div className="table-container">
+          <>
+            <FilterBar
+              search={backendsSearch}
+              onSearchChange={setBackendsSearch}
+              searchPlaceholder="Search backends by name or alias..."
+              filters={BACKEND_FILTERS}
+              activeFilter={backendsFilter}
+              onFilterChange={setBackendsFilter}
+            />
+            <div className="table-container">
             <table className="table">
               <thead>
                 <tr>
@@ -683,7 +800,8 @@ export default function Manage() {
                 })}
               </tbody>
             </table>
-          </div>
+            </div>
+          </>
           )
         })()}
       </div>

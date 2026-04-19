@@ -1723,6 +1723,56 @@ select.input {
   color: var(--color-text-primary);
 }
 
+/* Shared FilterBar layout — search strip + chip row + toggle strip. Lives
+   outside the .filter-bar chip row so the padding and wrapping behavior is
+   consistent between the Backends gallery and the System tabs. */
+.filter-bar-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-md);
+}
+.filter-bar-group__search {
+  min-width: 200px;
+  flex: 1;
+}
+.filter-bar-group__row {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  flex-wrap: wrap;
+}
+.filter-bar-group__right {
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: center;
+  flex-wrap: wrap;
+  padding-left: var(--spacing-md);
+  border-left: 1px solid var(--color-border-subtle);
+}
+.filter-bar-group__toggle {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  font-size: var(--text-xs);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+.filter-btn__count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-left: 6px;
+  min-width: 18px;
+  padding: 0 5px;
+  background: color-mix(in srgb, currentColor 18%, transparent);
+  border-radius: var(--radius-full);
+  font-size: 0.625rem;
+  font-weight: 600;
+}
+
 /* Popover — floating surface anchored to a trigger element. Uses the .card
    base so theming is free, adds z-index + fixed-position + scroll cap so it
    behaves on tables with many rows. Kept deliberately unstyled beyond that
